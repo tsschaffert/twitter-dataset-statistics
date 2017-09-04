@@ -1,5 +1,6 @@
 import * as fs from 'fs';
 import * as readline from 'readline';
+import * as path from 'path';
 const commandLineArgs = require('command-line-args');
 
 const optionDefinitions = [
@@ -25,10 +26,12 @@ async function processFolder(inputFolder: string) {
         let match = fileRegex.exec(file);
 
         if (match && match.length > 1) {
-            let userid = match[1];
+            const userid = match[1];
+
+            const filename = path.join(inputFolder, file);
 
             // Test if dataset has enough tweets first
-            let analysis = await analyseDataset(file, userid);
+            let analysis = await analyseDataset(filename, userid);
 
             console.log(`${analysis.userid};${analysis.instances};${analysis.attributes}`);
         }
