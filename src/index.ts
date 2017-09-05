@@ -22,6 +22,8 @@ async function main(options) {
 async function processFolder(inputFolder: string) {
     let files = fs.readdirSync(inputFolder);
     
+    console.log(`userid;instances;attributes;charAttributesPerCharacter;posAttributesPerWord`);
+
     for (let file of files) {
         let match = fileRegex.exec(file);
 
@@ -33,30 +35,91 @@ async function processFolder(inputFolder: string) {
             // Test if dataset has enough tweets first
             let analysis = await analyseDataset(filename, userid);
 
-            console.log(`${analysis.userid};${analysis.instances};${analysis.attributes}`);
+            console.log(`${analysis.userid};${analysis.instances};${analysis.attributes};${analysis.charAttributes/analysis.averageCharacterCount/analysis.instances};${analysis.posAttributes/analysis.averageWordCount/analysis.instances}`);
         }
     }
 }
 
-async function analyseDataset(filename: string, userid: string): Promise<{ userid: string, instances: number, attributes: number }> {
-    return new Promise<{ userid: string, instances: number, attributes: number }>((resolve, reject) => {
+async function analyseDataset(filename: string, userid: string) {
+    return new Promise<{ userid: string, instances: number, attributes: number, charAttributes: number, posAttributes: number, averageCharacterCount: number, averageWordCount: number }>((resolve, reject) => {
         let numberAttributes = 0;
         let numberInstances = 0;
         let inDataArea = false;
+
+        let charNgramAttributes = 0;
+        let posNgramAttributes = 0;
+        let tokenNgramAttributes = 0;
+
+        let wordCountIndex = -1;
+        let averageWordLengthIndex = -1;
+        let classIndex = -1;
+
+        let averageWordCount = 0;
+        let averageCharacterCount = 0;
+        let divideAverageBy = 0;
+
         const rl = readline.createInterface({
             input: fs.createReadStream(filename)
         });
     
         rl.on('line', (line: string) => {
-            if (!inDataArea && line.trim().indexOf("@attribute") === 0) {
+            line = line.trim();
+            if (!inDataArea && line.indexOf("@attribute") === 0) {
+                let split = line.split(" ");
+                let attributeName = split.length > 1 ? split[1].trim() : "";
+
+                // Find index of certain attributes
+                if (attributeName === "WordCount") {
+                    wordCountIndex = numberAttributes;
+                } else if (attributeName === "AverageWordLength") {
+                    averageWordLengthIndex = numberAttributes;
+                } else if (attributeName === "Class") {
+                    classIndex = numberAttributes;
+                }
+
+                if (attributeName.indexOf("char") === 0) {
+                    charNgramAttributes++;
+                } else if (attributeName.indexOf("pos") === 0) {
+                    posNgramAttributes++;
+                }
+                // TODO add token ngrams if relevant
+
                 numberAttributes++;
             } else {
                 if (inDataArea) {
-                    if (line.trim() !== "") {
+                    if (line !== "") {
+                        let attributeSplit = line.split(",");
+                        let attributeResult = {
+                            classValue: "",
+                            wordCount: -1,
+                            averageWordLength: -1,
+                        };
+
+                        for (let attributeEntry of attributeSplit) {
+                            let split = attributeEntry.trim().split(" ");
+
+                            let index = Number.parseInt(split[0]);
+                            let value = split[1];
+
+                            if (index === wordCountIndex) {
+                                attributeResult.wordCount = Number.parseFloat(value);
+                            } else if (index === averageWordLengthIndex) {
+                                attributeResult.averageWordLength = Number.parseFloat(value);
+                            } else if (index === classIndex) {
+                                attributeResult.classValue = value;
+                            }
+                        }
+
+                        if (attributeResult.classValue === "Mine") {
+                            averageWordCount += attributeResult.wordCount;
+                            averageCharacterCount += attributeResult.wordCount * attributeResult.averageWordLength;
+                            divideAverageBy++;
+                        }
+
                         numberInstances++;
                     }
                 } else {
-                    if (line.trim().indexOf("@data") === 0) {
+                    if (line.indexOf("@data") === 0) {
                         inDataArea = true;
                     }
                 }
@@ -64,10 +127,17 @@ async function analyseDataset(filename: string, userid: string): Promise<{ useri
         });
 
         rl.on('close', () => {
+            averageCharacterCount /= divideAverageBy;
+            averageWordCount /= divideAverageBy;
+
             resolve({
                 userid: userid,
                 instances: numberInstances,
-                attributes: numberAttributes
+                attributes: numberAttributes,
+                charAttributes: charNgramAttributes,
+                posAttributes: posNgramAttributes,
+                averageCharacterCount: averageCharacterCount,
+                averageWordCount: averageWordCount
             });
         });
     });
